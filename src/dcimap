@@ -1,6 +1,9 @@
 #!/usr/bin/python
 
 """
+dcimap is based on code written by Chris Kirkham
+Copyright (c) debugchannel 2013
+
 Released under the MIT/X11 License
 
 Copyright (c) 2010 -- Chris Kirkham
@@ -27,36 +30,12 @@ Copyright (c) 2010 -- Chris Kirkham
  OTHER DEALINGS IN THE SOFTWARE.
 """
 
-import threading, imaplib2, os, sys, getpass
-
-if not len(sys.argv) >= 2:
-	print '* ERROR: 2 Arguments are required. Call dcimap as follows:'
-	print ' '
-	print 'dcimap username password'
-	print ' '
-	print 'Alternatively, you can just pass your username and enter your password hidden:'
-	print ' '
-	print 'dcimap username                    (then you\'re prompted for a password)'
-	print ' '
-	sys.exit(1)
-
-
-username = sys.argv[1]			# or 'username string'
-
-if len(sys.argv) == 3:
-	password = sys.argv[2]			
-else:
-	password = getpass.getpass()
-	
-ServerTimeout	  = 29 # Mins   		(leave if you're not sure)
-
+import getpass, imaplib2, json, os, sys, threading, time, urllib2
 
 class Idler(threading.Thread):
 		
 	imap = imaplib2.IMAP4_SSL("imap.gmail.com") # can be changed to another server if needed
-	
 	stopWaitingEvent = threading.Event()
-
 	knownAboutMail = [] 
 	killNow = False 
 	
@@ -78,8 +57,8 @@ class Idler(threading.Thread):
 		except: #Uh Oh, something went wrong
 			print 'ERROR: IMAP Issue. It could be one (or more) of the following:'
 			print '- The impalib2.py file needs to be in the same directory as this file'
-			print '- You\'re not connected to the internet'
-			print '- Google\'s mail server(s) is/are down'
+			print '- You are not connected to the internet'
+			print '- The IMAP server is down'
 			print '- Your username and/or password is incorrect'
 			sys.exit(1)
 
@@ -89,11 +68,24 @@ class Idler(threading.Thread):
 			
 	
 	def publish(self, title, message):
-		print ' '
-		print 'NEW MAIL:'
-		print '--', title
-		print '--', message
-	
+
+		headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': "Mozilla/5.0"}
+
+	        req = urllib2.Request(
+                        "https://debugchannel.com/imap",
+                        json.dumps({
+                                        "handler": "tail",
+                                        "args": [title],
+                                        'info': {
+                                                        'pid': os.getpid(),
+                                                        'machineId': "hello",
+                                                        'generationTime': time.time(),
+                                        },
+                                        "trace": [ {'location': username, 'function': 'myfunc'} ]
+                        })
+        	)
+        	map(lambda (x,y): req.add_header(x,y), headers.items())
+        	urllib2.urlopen(req)
 	
 	def getMessageHeaderFieldsById(self, id, fields_tuple):
 		
@@ -114,7 +106,7 @@ class Idler(threading.Thread):
 		return results #which is a dictionary containing the the requested fields
 		
 
-	def showNewMailMessages(self):
+	def showNewMail(self):
 		
 		#get IDs of all UNSEEN messages 
 		typ, data = self.imap.SEARCH(None, 'UNSEEN')
@@ -123,7 +115,7 @@ class Idler(threading.Thread):
 			if not id in self.knownAboutMail:
 				
 				#get From and Subject fields from header
-				headerFields = self.getMessageHeaderFieldsById(id, ('From', 'Subject'))
+				headerFields = self.getMessageHeaderFieldsById(id, ('From', 'Subject', 'Message'))
 								
 				self.publish(" ".join(['Mail', headerFields['From']]), "'"+headerFields['Subject']+"'")
 				
@@ -147,26 +139,12 @@ class Idler(threading.Thread):
 		def _IDLECallback(args):
 			self.IDLEArgs = args
 			self.stopWaitingEvent.set()
-			#_IDLECallack() is entered when the IMAP server responds to the IDLE command when new
-			#mail is received. The self.stopWaitingEvent.set() allows the .wait() to return and
-			#therefore the rest of waitForServer().
 			
-			
-		#attach callback function, and let server know it should tell us when new mail arrives	
 		self.imap.idle(timeout=60*ServerTimeout, callback=_IDLECallback)
 
-		#execution will stay here until either:
-		# - a new message is received; or
-		# - the timeout has happened 
-		#   	- we set the timout -- the RFC says the server has the right to forget about 
-		#	  	  us after 30 mins of inactivity (i.e. not communicating with server for 30 mins). 
-		#	  	  By sending the IDLE command every 29 mins, we won't be forgotten.
-		# - Alternatively, the kill() method has been invoked.
 		self.stopWaitingEvent.wait()
-		
-		#self.IDLEArgs has now been filled (if not kill()ed)
-		
-		if not self.killNow: # skips a chunk of code to sys.exit() more quickly.
+				
+		if not self.killNow:
 			
 			if self.IDLEArgs[0][1][0] == ('IDLE terminated (Success)'):
 			# This (above) is sent when either: there has been a timeout (server sends); or, there
@@ -189,36 +167,48 @@ class Idler(threading.Thread):
 		
 			#now there has either been a timeout or a new message -- Do something...
 			if self.newMail:
-				self.showNewMailMessages()
+				self.showNewMail()
 							
 			elif self.timeout:
 				print "timeout"		
 
 		print 'waitForServer() exited'
-			
-			
-def main():
-	global username
-	global password
-	
-	idler = Idler(username, password)
-	idler.start()
-	
-	print '* Waiting for mail...'
-	q = ''
-	while not q == 'q':
-		q = raw_input('Type \'q\' followed by [ENTER] to quit: ')
 		
-	idler.kill()	
-	idler.imap.CLOSE()
-	idler.imap.LOGOUT()
-	sys.exit()
 
 
 
-if __name__ == '__main__': # then this script is being run on its own, i.e. not imported
-	main()
-else:
-	print 'I don\'t think you ment to import this'
+
+if not len(sys.argv) >= 2:
+	print '* ERROR: 2 Arguments are required. Call dcimap as follows:'
+	print ' '
+	print 'dcimap username password'
+	print ' '
+	print 'Alternatively, you can just pass your username and enter your password hidden:'
+	print ' '
+	print 'dcimap username   (then you are prompted for a password)'
+	print ' '
 	sys.exit(1)
+
+global username
+
+username = sys.argv[1]	
+
+if len(sys.argv) == 3:
+	password = sys.argv[2]			
+else:
+	password = getpass.getpass()
 	
+ServerTimeout	  = 29 # Mins   
+
+idler = Idler(username, password)
+idler.start()
+
+print '* Waiting for mail...'
+q = ''
+while not q == 'q':
+	q = raw_input('Type \'q\' followed by [ENTER] to quit: ')
+	
+idler.kill()	
+idler.imap.CLOSE()
+idler.imap.LOGOUT()
+sys.exit()

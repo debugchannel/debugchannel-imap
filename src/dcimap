@@ -1,10 +1,8 @@
 #!/usr/bin/python
-
 """
-dcimap is based on code written by Chris Kirkham
 Copyright (c) debugchannel 2013
 
-Released under the MIT/X11 License
+dcimap is based on code written by Chris Kirkham. Thanks
 
 Copyright (c) 2010 -- Chris Kirkham
 
@@ -140,7 +138,7 @@ class Idler(threading.Thread):
 			self.IDLEArgs = args
 			self.stopWaitingEvent.set()
 			
-		self.imap.idle(timeout=60*ServerTimeout, callback=_IDLECallback)
+		self.imap.idle(timeout=1740, callback=_IDLECallback)
 
 		self.stopWaitingEvent.wait()
 				

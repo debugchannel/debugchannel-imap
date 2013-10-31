@@ -30,23 +30,23 @@ Copyright (c) 2010 -- Chris Kirkham
 import threading, imaplib2, os, sys, getpass
 
 if not len(sys.argv) >= 2:
-	print '* ERROR: 2 Arguments are required. Call IMAPPush.py as follows:'
+	print '* ERROR: 2 Arguments are required. Call dcimap as follows:'
 	print ' '
-	print 'IMAPPush.py USERNAME PASSWORD'
+	print 'dcimap username password'
 	print ' '
 	print 'Alternatively, you can just pass your username and enter your password hidden:'
 	print ' '
-	print 'IMAPPush.py USERNAME                    (then you\'re prompted for a password)'
+	print 'dcimap username                    (then you\'re prompted for a password)'
 	print ' '
 	sys.exit(1)
 
 
-YourGmailUsername = sys.argv[1]			# or 'username string'
+username = sys.argv[1]			# or 'username string'
 
 if len(sys.argv) == 3:
-	YourGmailPassword = sys.argv[2]			
+	password = sys.argv[2]			
 else:
-	YourGmailPassword = getpass.getpass()
+	password = getpass.getpass()
 	
 ServerTimeout	  = 29 # Mins   		(leave if you're not sure)
 
@@ -61,11 +61,11 @@ class Idler(threading.Thread):
 	killNow = False 
 	
 	
-	def __init__(self, GMailUsername, GMailPassword):
+	def __init__(self, username, password):
 				
 		try:
 			#establish connection to IMAP Server
-			self.imap.LOGIN(GMailUsername, GMailPassword)
+			self.imap.LOGIN(username, password)
 			self.imap.SELECT("INBOX")
 			
 			#get the IDs of all messages in the inbox and put in knowAboutMail
@@ -88,7 +88,7 @@ class Idler(threading.Thread):
 			self.waitForServer()	
 			
 	
-	def growlnotify(self, title, message):
+	def publish(self, title, message):
 		print ' '
 		print 'NEW MAIL:'
 		print '--', title
@@ -125,10 +125,8 @@ class Idler(threading.Thread):
 				#get From and Subject fields from header
 				headerFields = self.getMessageHeaderFieldsById(id, ('From', 'Subject'))
 								
-				#notify
-				self.growlnotify(" ".join(['Mail', headerFields['From']]), "'"+headerFields['Subject']+"'")
+				self.publish(" ".join(['Mail', headerFields['From']]), "'"+headerFields['Subject']+"'")
 				
-				#add this message to the list of known messages
 				self.knownAboutMail.append(id)
 				
 
@@ -200,10 +198,10 @@ class Idler(threading.Thread):
 			
 			
 def main():
-	global YourGmailUsername
-	global YourGmailPassword
+	global username
+	global password
 	
-	idler = Idler(YourGmailUsername, YourGmailPassword)
+	idler = Idler(username, password)
 	idler.start()
 	
 	print '* Waiting for mail...'

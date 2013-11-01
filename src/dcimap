@@ -28,17 +28,19 @@ Copyright (c) 2010 -- Chris Kirkham
  OTHER DEALINGS IN THE SOFTWARE.
 """
 
-import getpass, imaplib2, json, os, sys, threading, time, urllib2
+import getpass, email, imaplib2, json, os, sys, threading, time, urllib2
 
 class Idler(threading.Thread):
 		
-	imap = imaplib2.IMAP4_SSL("imap.gmail.com") # can be changed to another server if needed
+	imap = imaplib2.IMAP4_SSL("imap.gmail.com") 
+
 	stopWaitingEvent = threading.Event()
 	knownAboutMail = [] 
 	killNow = False 
 	
 	
-	def __init__(self, username, password):
+	def __init__(self, server, username, password):
+
 				
 		try:
 			#establish connection to IMAP Server
@@ -65,21 +67,22 @@ class Idler(threading.Thread):
 			self.waitForServer()	
 			
 	
-	def publish(self, title, message):
+	def publish(self, emailTo, emailFrom, emailSubject, emailMessage):
 
 		headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': "Mozilla/5.0"}
 
 	        req = urllib2.Request(
-                        "https://debugchannel.com/imap",
+                        "http://192.168.2.244:1025/imap",
                         json.dumps({
-                                        "handler": "tail",
-                                        "args": [title],
+                                        "handler": "email",
+                                        "args": [emailTo, emailSubject,emailMessage],
                                         'info': {
                                                         'pid': os.getpid(),
                                                         'machineId': "hello",
                                                         'generationTime': time.time(),
+                                                        'sequenceNo':1
                                         },
-                                        "trace": [ {'location': username, 'function': 'myfunc'} ]
+                                        "trace": [ {'location': emailFrom, 'function': 'myfunc'} ]
                         })
         	)
         	map(lambda (x,y): req.add_header(x,y), headers.items())
@@ -87,21 +90,29 @@ class Idler(threading.Thread):
 	
 	def getMessageHeaderFieldsById(self, id, fields_tuple):
 		
-		#get the entire header
+		# Headers
 		typ, header = self.imap.FETCH(id, '(RFC822.HEADER)')
 		
-		#get individual lines
 		headerlines = header[0][1].splitlines()
 		
-		#get the lines that start with the values in fields_tuple
 		results = {}
 		for field in fields_tuple:
 			results[field] = ''
 			for line in headerlines:
 				if line.startswith(field):
 					results[field] = line
-					
-		return results #which is a dictionary containing the the requested fields
+
+		# Message Body
+		typ, data = self.imap.FETCH(id,'(RFC822)')
+		raw_email = email.message_from_string(data[0][1])
+
+		if raw_email.is_multipart():
+			for payload in raw_email.get_payload():		
+				results['Message'] = payload.get_payload()
+		else:
+			results['Message'] = payload.get_payload()
+
+		return results 
 		
 
 	def showNewMail(self):
@@ -113,9 +124,9 @@ class Idler(threading.Thread):
 			if not id in self.knownAboutMail:
 				
 				#get From and Subject fields from header
-				headerFields = self.getMessageHeaderFieldsById(id, ('From', 'Subject', 'Message'))
+				headerFields = self.getMessageHeaderFieldsById(id, ('From', 'Subject'))
 								
-				self.publish(" ".join(['Mail', headerFields['From']]), "'"+headerFields['Subject']+"'")
+				self.publish(username,headerFields['From'],headerFields['Subject'],headerFields['Message'],)
 				
 				self.knownAboutMail.append(id)
 				
@@ -166,13 +177,7 @@ class Idler(threading.Thread):
 			#now there has either been a timeout or a new message -- Do something...
 			if self.newMail:
 				self.showNewMail()
-							
-			elif self.timeout:
-				print "timeout"		
-
-		print 'waitForServer() exited'
-		
-
+								
 
 
 
@@ -198,15 +203,24 @@ else:
 	
 ServerTimeout	  = 29 # Mins   
 
-idler = Idler(username, password)
+print "Connecting to IMAP Server..."
+
+
+idler = Idler("imap.gmail.com", username, password)
 idler.start()
 
-print '* Waiting for mail...'
-q = ''
-while not q == 'q':
-	q = raw_input('Type \'q\' followed by [ENTER] to quit: ')
-	
+print 'Connected to imap.gmail.com'
+
+try:
+	while True: time.sleep(2000)
+except KeyboardInterrupt: 
+	print "Closing IMAP connection ..."
+
 idler.kill()	
 idler.imap.CLOSE()
 idler.imap.LOGOUT()
+
+print 'IMAP connection closed'
+
+
 sys.exit()
